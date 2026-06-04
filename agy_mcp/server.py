@@ -23,13 +23,14 @@ from typing import Optional
 from mcp.server.fastmcp import FastMCP
 
 from .core import AGY_BIN, DEFAULT_TIMEOUT, AgyError, _agy_cmd, generate_image, run_agy
+from .gemini import run_gemini, search_gemini
 
 mcp = FastMCP("agy")
 
 
 @mcp.tool()
 def ask(prompt: str, cwd: Optional[str] = None) -> str:
-    """General-purpose Antigravity query. Use for analysis, Q&A, drafting,
+    """General-purpose Antigravity (agy) query. Use for analysis, Q&A, drafting,
     code generation, anything that doesn't fit a more specific tool.
 
     Args:
@@ -50,6 +51,22 @@ def search(query: str) -> str:
         "Return a concise synthesis followed by a numbered list of source URLs."
     )
     return run_agy(p)
+
+
+@mcp.tool()
+def gemini_ask(prompt: str) -> str:
+    """General-purpose query via the official Gemini CLI (OAuth subscription).
+    More stable than `ask` for plain text; prefer this for non-image text work.
+    """
+    return run_gemini(prompt)
+
+
+@mcp.tool()
+def gemini_search(query: str) -> str:
+    """Web search via the Gemini CLI's google_web_search grounding. Returns a
+    synthesized answer with real source URLs. More stable than agy `search`.
+    """
+    return search_gemini(query)
 
 
 @mcp.tool()

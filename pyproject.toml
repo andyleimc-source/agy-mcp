@@ -1,7 +1,7 @@
 [project]
 name = "agy-mcp"
-version = "0.2.0"
-description = "MCP server wrapping Google Antigravity CLI (agy) — use Antigravity from any MCP client, billed against your Google AI subscription."
+version = "0.3.0"
+description = "MCP server + CLIs wrapping Google's subscription CLIs — Antigravity (agy: text/search/image) and Gemini CLI (text/search). OAuth subscription quota, not a paid API key."
 readme = "README.md"
 license = { text = "MIT" }
 authors = [{ name = "Andy Lei", email = "andylei.mc@gmail.com" }]
@@ -17,6 +17,7 @@ dependencies = ["mcp>=1.0.0"]
 [project.scripts]
 agy-mcp = "agy_mcp.server:main"
 agq = "agy_mcp.cli:main"
+gmq = "agy_mcp.gmcli:main"
 
 [project.urls]
 Homepage = "https://github.com/andyleimc-source/agy-mcp"
