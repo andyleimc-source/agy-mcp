@@ -23,17 +23,19 @@ from pathlib import Path
 from typing import Optional
 
 AGY_BIN = os.environ.get("AGY_BIN", "agy")
-# A normal ask/search completes in ~30s. agy occasionally wedges — ignoring even
-# its own --print-timeout — and a hard 600s budget turned those transient hangs
-# into 10-minute blocks. Fail fast instead (6x headroom over a normal call) and
-# rely on the auto-retry below: a fresh agy process almost always clears the wedge.
-DEFAULT_TIMEOUT = int(os.environ.get("AGY_TIMEOUT", "180"))
+# Observed healthy calls: text ~14s, search ~28s, image ~30-44s. agy occasionally
+# wedges — ignoring even its own --print-timeout — and a hard 600s budget turned
+# those transient hangs into 10-minute blocks. Fail fast at 120s/attempt (≈3-4x
+# headroom over the slowest healthy call) and let the auto-retry below recover:
+# a fresh agy process almost always clears the wedge. WORST CASE is bounded to
+# timeout × (AGY_RETRIES+1) — keep that product well under 10 minutes.
+DEFAULT_TIMEOUT = int(os.environ.get("AGY_TIMEOUT", "120"))
 # How many times to retry run_agy when the subprocess hard-times-out (the wedge
-# case). 1 retry = up to 2 total attempts.
+# case). 1 retry = up to 2 total attempts → worst case 2×timeout.
 AGY_RETRIES = int(os.environ.get("AGY_RETRIES", "1"))
-# Image generation legitimately runs longer than a text answer; give it its own
-# (larger) budget so the tighter DEFAULT_TIMEOUT doesn't kill valid gens.
-AGY_IMAGE_TIMEOUT = int(os.environ.get("AGY_IMAGE_TIMEOUT", "300"))
+# Image is only marginally slower than search; a tiny bump is enough. Kept as a
+# separate knob, but NOT large enough to push worst-case (×2 retries) near 10 min.
+AGY_IMAGE_TIMEOUT = int(os.environ.get("AGY_IMAGE_TIMEOUT", "120"))
 # agy is an agentic CLI. In non-TTY print mode it stalls on tool-permission
 # prompts (image generation, file writes) with nobody to confirm, burning the
 # whole timeout. --dangerously-skip-permissions auto-approves so print mode
