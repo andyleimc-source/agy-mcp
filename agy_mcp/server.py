@@ -19,7 +19,7 @@ from typing import Optional
 
 from mcp.server.fastmcp import FastMCP
 
-from .core import AGY_BIN, DEFAULT_TIMEOUT, AgyError, generate_image, run_agy
+from .core import AGY_BIN, DEFAULT_TIMEOUT, AgyError, _agy_cmd, generate_image, run_agy
 
 mcp = FastMCP("agy")
 
@@ -148,7 +148,7 @@ def continue_chat(prompt: str) -> str:
     if not shutil.which(AGY_BIN):
         raise AgyError(f"`{AGY_BIN}` not found on PATH.")
     result = subprocess.run(
-        [AGY_BIN, "-c", "-p", prompt],
+        _agy_cmd(["-c", "-p", prompt]),
         capture_output=True,
         text=True,
         timeout=DEFAULT_TIMEOUT,

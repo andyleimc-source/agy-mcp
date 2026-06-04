@@ -24,6 +24,23 @@ from typing import Optional
 
 AGY_BIN = os.environ.get("AGY_BIN", "agy")
 DEFAULT_TIMEOUT = int(os.environ.get("AGY_TIMEOUT", "600"))
+# agy is an agentic CLI. In non-TTY print mode it stalls on tool-permission
+# prompts (image generation, file writes) with nobody to confirm, burning the
+# whole timeout. --dangerously-skip-permissions auto-approves so print mode
+# actually completes. Opt out with AGY_SKIP_PERMISSIONS=0.
+AGY_SKIP_PERMS = os.environ.get("AGY_SKIP_PERMISSIONS", "1") != "0"
+
+
+def _agy_cmd(extra_args: list, timeout: Optional[int] = None) -> list:
+    """Build the agy argv: skip-permissions + a print-timeout that gives up just
+    before our subprocess kill, so agy reports its own timeout instead of being
+    hard-killed."""
+    cmd = [AGY_BIN]
+    if AGY_SKIP_PERMS:
+        cmd.append("--dangerously-skip-permissions")
+    budget = timeout or DEFAULT_TIMEOUT
+    cmd += ["--print-timeout", f"{max(budget - 10, 30)}s"]
+    return cmd + extra_args
 GEMINI_DIR = Path(
     os.environ.get("AGY_GEMINI_DIR", str(Path.home() / ".gemini" / "antigravity-cli"))
 )
@@ -131,7 +148,7 @@ def run_agy(prompt: str, cwd: Optional[str] = None, timeout: Optional[int] = Non
 
     start = time.time()
     proc = subprocess.run(
-        [AGY_BIN, "-p", prompt],
+        _agy_cmd(["-p", prompt], timeout),
         cwd=workdir,
         capture_output=True,
         text=True,
