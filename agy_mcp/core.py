@@ -23,7 +23,17 @@ from pathlib import Path
 from typing import Optional
 
 AGY_BIN = os.environ.get("AGY_BIN", "agy")
-DEFAULT_TIMEOUT = int(os.environ.get("AGY_TIMEOUT", "600"))
+# A normal ask/search completes in ~30s. agy occasionally wedges — ignoring even
+# its own --print-timeout — and a hard 600s budget turned those transient hangs
+# into 10-minute blocks. Fail fast instead (6x headroom over a normal call) and
+# rely on the auto-retry below: a fresh agy process almost always clears the wedge.
+DEFAULT_TIMEOUT = int(os.environ.get("AGY_TIMEOUT", "180"))
+# How many times to retry run_agy when the subprocess hard-times-out (the wedge
+# case). 1 retry = up to 2 total attempts.
+AGY_RETRIES = int(os.environ.get("AGY_RETRIES", "1"))
+# Image generation legitimately runs longer than a text answer; give it its own
+# (larger) budget so the tighter DEFAULT_TIMEOUT doesn't kill valid gens.
+AGY_IMAGE_TIMEOUT = int(os.environ.get("AGY_IMAGE_TIMEOUT", "300"))
 # agy is an agentic CLI. In non-TTY print mode it stalls on tool-permission
 # prompts (image generation, file writes) with nobody to confirm, burning the
 # whole timeout. --dangerously-skip-permissions auto-approves so print mode
@@ -131,28 +141,16 @@ def _recover_from_transcript(workdir: str, since: float) -> Optional[str]:
 # --- public API ---------------------------------------------------------------
 
 
-def run_agy(prompt: str, cwd: Optional[str] = None, timeout: Optional[int] = None) -> str:
-    """Run a single prompt through `agy -p` and return the model's response.
-
-    Reads stdout first; on empty stdout (the known non-TTY bug) recovers the
-    answer from agy's transcript files. Raises AgyError on failure.
-    """
-    if not shutil.which(AGY_BIN):
-        raise AgyError(
-            f"`{AGY_BIN}` not found on PATH. Install Antigravity CLI first "
-            "(https://antigravity.google) and ensure `agy` is on PATH."
-        )
-    workdir = cwd or os.getcwd()
-    if not Path(workdir).is_dir():
-        raise AgyError(f"cwd does not exist: {workdir}")
-
+def _run_agy_once(prompt: str, workdir: str, timeout: int) -> str:
+    """One `agy -p` attempt. Raises subprocess.TimeoutExpired on hard timeout
+    (the wedge case, handled by the retry loop in run_agy) or AgyError otherwise."""
     start = time.time()
     proc = subprocess.run(
         _agy_cmd(["-p", prompt], timeout),
         cwd=workdir,
         capture_output=True,
         text=True,
-        timeout=timeout or DEFAULT_TIMEOUT,
+        timeout=timeout,
     )
     out = (proc.stdout or "").strip()
     err = (proc.stderr or "").strip()
@@ -168,6 +166,37 @@ def run_agy(prompt: str, cwd: Optional[str] = None, timeout: Optional[int] = Non
         "agy returned no stdout and no transcript response could be recovered.\n"
         f"stderr:\n{err or '(empty)'}"
     )
+
+
+def run_agy(prompt: str, cwd: Optional[str] = None, timeout: Optional[int] = None) -> str:
+    """Run a single prompt through `agy -p` and return the model's response.
+
+    Reads stdout first; on empty stdout (the known non-TTY bug) recovers the
+    answer from agy's transcript files. On a hard timeout (agy wedged and ignored
+    its own --print-timeout) the killed process is retried with a fresh agy, which
+    almost always clears the wedge. Raises AgyError on failure.
+    """
+    if not shutil.which(AGY_BIN):
+        raise AgyError(
+            f"`{AGY_BIN}` not found on PATH. Install Antigravity CLI first "
+            "(https://antigravity.google) and ensure `agy` is on PATH."
+        )
+    workdir = cwd or os.getcwd()
+    if not Path(workdir).is_dir():
+        raise AgyError(f"cwd does not exist: {workdir}")
+
+    budget = timeout or DEFAULT_TIMEOUT
+    last_exc: Optional[subprocess.TimeoutExpired] = None
+    for attempt in range(AGY_RETRIES + 1):
+        try:
+            return _run_agy_once(prompt, workdir, budget)
+        except subprocess.TimeoutExpired as exc:
+            last_exc = exc  # wedged: kill happened in subprocess.run; retry fresh
+    raise AgyError(
+        f"agy hard-timed-out after {budget}s on {AGY_RETRIES + 1} attempt(s) — "
+        f"the CLI appears wedged (it ignored its own --print-timeout). "
+        f"Try again, or run `agy -p '...'` directly to re-check the OAuth login state."
+    ) from last_exc
 
 
 def generate_image(
@@ -189,7 +218,7 @@ def generate_image(
         f"Save the result to this ABSOLUTE path: {target}\n"
         f"After saving, verify the file exists and reply with only the path."
     )
-    out = run_agy(p, cwd=cwd, timeout=timeout)
+    out = run_agy(p, cwd=cwd, timeout=timeout or AGY_IMAGE_TIMEOUT)
     if not target.exists():
         raise AgyError(f"agy completed but no file at {target}.\nOutput:\n{out}")
     return target
