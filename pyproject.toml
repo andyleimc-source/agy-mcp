@@ -1,6 +1,6 @@
 [project]
 name = "agy-mcp"
-version = "0.1.0"
+version = "0.2.0"
 description = "MCP server wrapping Google Antigravity CLI (agy) — use Antigravity from any MCP client, billed against your Google AI subscription."
 readme = "README.md"
 license = { text = "MIT" }
@@ -16,6 +16,7 @@ dependencies = ["mcp>=1.0.0"]
 
 [project.scripts]
 agy-mcp = "agy_mcp.server:main"
+agq = "agy_mcp.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/andyleimc-source/agy-mcp"
