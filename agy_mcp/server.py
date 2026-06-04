@@ -11,9 +11,12 @@ non-TTY stdout bug live in `agy_mcp.core` and are shared with the `agq` CLI.
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import subprocess
+import threading
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -158,7 +161,23 @@ def continue_chat(prompt: str) -> str:
     return (result.stdout or "").strip()
 
 
+def _exit_when_orphaned(poll: float = 5.0) -> None:
+    """Daemon watchdog: exit if our parent (the MCP host) dies.
+
+    stdio servers should quit on stdin EOF when the host exits, but while a tool
+    call is blocked in a long `agy` subprocess that EOF goes unread, so orphaned
+    servers pile up (observed: 20 instances surviving for days). On Unix a dead
+    parent reparents us to PID 1; polling getppid() lets us exit reliably no
+    matter what the main thread is doing. os._exit because we may be mid-blocked.
+    """
+    while True:
+        if os.getppid() == 1:
+            os._exit(0)
+        time.sleep(poll)
+
+
 def main() -> None:
+    threading.Thread(target=_exit_when_orphaned, daemon=True).start()
     mcp.run()
 
 
